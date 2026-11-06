@@ -7,13 +7,14 @@ import {
 	type Model,
 	type Models,
 	type MutableModels,
+	type Provider,
 	type StreamFunction,
 } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { lazyApi, lazyStream } from "@earendil-works/pi-ai/api/lazy";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type ModelRole } from "../../config.ts";
-import { DEFAULT_THINKING_ORDER } from "../core/settings.ts";
+import { DEFAULT_THINKING_ORDER, normalizeBaseUrl } from "../core/settings.ts";
 import packageMetadata from "../../package.json" with { type: "json" };
 import { chatGPTModel } from "./chatgpt-bridge.ts";
 import { chatGPTStream } from "./chatgpt-stream.ts";
@@ -89,12 +90,38 @@ export function piModels() {
 			// replace its lazy forwarding; preserve the native factory's auth/catalog.
 			collection.setProvider(provider.id === "amazon-bedrock"
 				? { ...provider, ...lazyApi(() => import("@earendil-works/pi-ai/api/bedrock-converse-stream")) }
-				: provider);
+				: provider.id === "anthropic"
+					? withBaseUrl(provider, anthropicBaseUrl())
+					: provider);
 		}
 		collection.setProvider(createClaudeCodeProvider(streamClaudeCode));
 	}
 	providerSource?.sync(collection);
 	return collection;
+}
+
+/** The Anthropic base-URL override (fork addition): ANTHROPIC_BASE_URL, the
+ *  same variable Claude Code reads, routes the native Anthropic provider
+ *  through an Anthropic-compatible proxy such as CLIProxyAPI
+ *  (`http://127.0.0.1:8317`, no `/v1`; the SDK appends `/v1/messages`).
+ *  Unset or not a valid http(s) URL → undefined (api.anthropic.com). Read once
+ *  when the collection is built, so a change needs a restart. */
+export function anthropicBaseUrl(env: Readonly<Record<string, string | undefined>> = process.env): string | undefined {
+	return normalizeBaseUrl(env.ANTHROPIC_BASE_URL ?? "") || undefined;
+}
+
+/** A provider whose every model (chat and other types) targets `baseUrl`.
+ *  The catalog's ids, limits, thinking and pricing stay as they are; only the
+ *  host moves. Undefined returns the provider unchanged. */
+export function withBaseUrl<P extends Provider<Api>>(provider: P, baseUrl: string | undefined): P {
+	if (!baseUrl) return provider;
+	const getAllModels = provider.getAllModels?.bind(provider);
+	return {
+		...provider,
+		baseUrl,
+		getModels: () => provider.getModels().map((model) => ({ ...model, baseUrl })),
+		...(getAllModels ? { getAllModels: () => getAllModels().map((model) => ({ ...model, baseUrl })) } : {}),
+	};
 }
 
 /** OpenRouter API key (BYOK); tests never read this — they inject engines. */
