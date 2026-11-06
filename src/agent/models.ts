@@ -88,24 +88,38 @@ export function piModels() {
 			// Keep the native Bedrock implementation reachable by standalone tracing.
 			// Pi's default Node-only loader hides this import from bundlers. Only
 			// replace its lazy forwarding; preserve the native factory's auth/catalog.
+			if (provider.id === "anthropic") nativeAnthropic = provider;
 			collection.setProvider(provider.id === "amazon-bedrock"
 				? { ...provider, ...lazyApi(() => import("@earendil-works/pi-ai/api/bedrock-converse-stream")) }
-				: provider.id === "anthropic"
-					? withBaseUrl(provider, anthropicBaseUrl())
-					: provider);
+				: provider);
 		}
 		collection.setProvider(createClaudeCodeProvider(streamClaudeCode));
 	}
+	syncAnthropicBaseUrl(collection);
 	providerSource?.sync(collection);
 	return collection;
+}
+
+let nativeAnthropic: Provider<Api> | undefined;
+let appliedAnthropicBaseUrl: string | undefined;
+
+/** Re-point the native Anthropic provider when ANTHROPIC_BASE_URL changes.
+ *  Checked on every piModels() call because the desktop server reflects
+ *  auth.json values into the env only when the keys module loads. */
+function syncAnthropicBaseUrl(models: MutableModels): void {
+	const baseUrl = anthropicBaseUrl();
+	if (!nativeAnthropic || baseUrl === appliedAnthropicBaseUrl) return;
+	models.setProvider(withBaseUrl(nativeAnthropic, baseUrl));
+	appliedAnthropicBaseUrl = baseUrl;
 }
 
 /** The Anthropic base-URL override (fork addition): ANTHROPIC_BASE_URL, the
  *  same variable Claude Code reads, routes the native Anthropic provider
  *  through an Anthropic-compatible proxy such as CLIProxyAPI
  *  (`http://127.0.0.1:8317`, no `/v1`; the SDK appends `/v1/messages`).
- *  Unset or not a valid http(s) URL → undefined (api.anthropic.com). Read once
- *  when the collection is built, so a change needs a restart. */
+ *  It can come from the environment or from auth.json (the keys store
+ *  reflects its entries into the env). Unset or not a valid http(s) URL →
+ *  undefined (api.anthropic.com). */
 export function anthropicBaseUrl(env: Readonly<Record<string, string | undefined>> = process.env): string | undefined {
 	return normalizeBaseUrl(env.ANTHROPIC_BASE_URL ?? "") || undefined;
 }

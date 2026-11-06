@@ -14,7 +14,29 @@ This fork can route the built-in **Anthropic** provider through an Anthropic-com
 3. In **Settings → Providers**, save one of CLIProxy's `api-keys` (from its `config.yaml`) as the **Anthropic** key. LearnHarness sends it as `x-api-key`, which CLIProxy accepts. If `ANTHROPIC_AUTH_TOKEN` is set in the environment, pi-ai sends that as a Bearer token instead, which CLIProxy also accepts.
 4. Pick Anthropic models for the Strong, Cheap and Vision slots.
 
-The URL is read once at startup, so restart the app after changing it. Unset, blank or non-http(s) values keep `https://api.anthropic.com`.
+In the desktop app, which has no `.env.local`, put both values in `auth.json` in the app data folder (`%APPDATA%\LearnHarness\auth.json` on Windows). The server copies every entry into its environment at boot:
+
+```json
+{
+	"ANTHROPIC_API_KEY": "<a CLIProxy api-key>",
+	"ANTHROPIC_BASE_URL": "http://127.0.0.1:8317"
+}
+```
+
+The URL is re-checked on every model lookup. Unset, blank or non-http(s) values keep `https://api.anthropic.com`.
+
+## Windows desktop build
+
+```
+npm ci
+npx next build
+node scripts/smoke-provider-runtime.mjs
+node scripts/build-server.mjs
+node scripts/smoke-server.mjs --electron
+npx electron-builder --win --x64 --publish never
+```
+
+Run `dist\LearnHarness-<version>-x64-setup.exe` to install over the upstream app; user data stays. Unset `ELECTRON_RUN_AS_NODE` first if your shell sets it. The update feed points at this fork, so upstream releases never replace the install.
 
 ## Notes
 
